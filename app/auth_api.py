@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import timedelta, timezone
-import ipaddress
 import os
 from pathlib import Path
 import re
@@ -16,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import repo_auth
+from . import repo_bootstrap
 from .auth import (
     REFRESH_COOKIE,
     clear_auth_cookies,
@@ -51,7 +51,7 @@ class RegisterPayload(BaseModel):
 
 
 class BootstrapPayload(RegisterPayload):
-    pass
+    token: str = Field(min_length=8, max_length=200)
 
 
 class ChangePasswordPayload(BaseModel):
@@ -164,45 +164,24 @@ def auth_response(user: dict, session_id: str, refresh_token: str) -> JSONRespon
 
 @router.get("/registration-status")
 def registration_status():
-    return {
-        "signupEnabled": True,
-        "needsBootstrap": repo_auth.active_superadmin_count() == 0,
-    }
-
-
-def _can_bootstrap(request: Request) -> bool:
-    """En local solo loopback. En Kaanbal el cliente visible es el ingress del cluster."""
-    host = (request.client.host if request.client else "") or ""
-    if host in {"127.0.0.1", "::1", "localhost"}:
-        return True
-    if settings.ENV.lower() in {"prod", "production", "staging"}:
-        return True
-    try:
-        ip = ipaddress.ip_address(host.split("%", 1)[0])
-        return bool(ip.is_loopback or ip.is_private)
-    except ValueError:
-        return False
+    return repo_bootstrap.public_status()
 
 
 @router.post("/bootstrap", status_code=201)
 def bootstrap(payload: BootstrapPayload, request: Request):
-    if not _can_bootstrap(request):
-        raise HTTPException(403, "La primera administradora solo puede crearse desde la laptop servidor.")
-    if any(user["isSuperadmin"] for user in repo_auth.list_users()):
-        raise HTTPException(409, "La configuración inicial ya fue completada.")
-    if not repo_auth.valid_email(payload.email):
-        raise HTTPException(422, "Escribe un correo válido.")
-    if repo_auth.get_user_by_email(payload.email):
-        raise HTTPException(409, "Ya existe una cuenta con ese correo.")
+    if repo_bootstrap.is_locked():
+        raise HTTPException(410, "El inicio de instalación ya fue usado y destruido.")
     try:
-        user = repo_auth.create_user(
+        encoded = hash_password(payload.password)
+        user = repo_bootstrap.create_first_admin(
+            token=payload.token,
             name=payload.name,
             email=payload.email,
-            password_hash=hash_password(payload.password),
-            status="activa",
+            password_hash=encoded,
             cargo=payload.cargo,
-            is_superadmin=True,
         )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     ip, agent = client_data(request)
@@ -215,40 +194,17 @@ def bootstrap(payload: BootstrapPayload, request: Request):
         status_code=201,
         ip=ip,
         user_agent=agent,
+        details={"bootstrap": "consumed"},
     )
-    return {"ok": True, "message": "Administradora principal creada. Ya puedes iniciar sesión."}
+    return {"ok": True, "message": "Administradora principal creada. El token de inicio quedó destruido."}
 
 
 @router.post("/register", status_code=202)
-def register(payload: RegisterPayload, request: Request):
-    if not repo_auth.valid_email(payload.email):
-        raise HTTPException(422, "Escribe un correo válido.")
-    if repo_auth.get_user_by_email(payload.email):
-        raise HTTPException(409, "Ya existe una cuenta con ese correo.")
-    try:
-        encoded = hash_password(payload.password)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    user = repo_auth.create_user(
-        name=payload.name,
-        email=payload.email,
-        password_hash=encoded,
-        status="pendiente",
-        cargo=payload.cargo,
+def register(_payload: RegisterPayload, _request: Request):
+    raise HTTPException(
+        410,
+        "El alta pública está cerrada. Pide a la administradora que te cree la cuenta desde Seguridad.",
     )
-    ip, agent = client_data(request)
-    repo_auth.audit(
-        event_type="auth_register",
-        action="register",
-        resource="user",
-        actor_id=user["id"],
-        actor_name=user["nombre"],
-        status_code=202,
-        ip=ip,
-        user_agent=agent,
-        details={"status": "pending"},
-    )
-    return {"ok": True, "message": "Tu solicitud fue enviada. Una administradora debe aprobarla."}
 
 
 @router.post("/login")

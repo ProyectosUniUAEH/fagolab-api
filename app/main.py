@@ -68,8 +68,27 @@ def _sincronizar_permisos():
         from . import repo_auth
         repo_auth.sync_catalog()
     except Exception as exc:
-        # /health seguirá indicando si la BD está disponible; el log deja el motivo exacto.
         print(f"[auth] no se pudo sincronizar el catálogo ACL: {exc}")
+
+
+@app.on_event("startup")
+def _bootstrap_token_banner():
+    """Imprime el token de primer arranque (Jenkins / instalador) o confirma que ya murió."""
+    try:
+        from . import repo_bootstrap
+        token = repo_bootstrap.ensure_token_on_startup()
+        if token:
+            setup_url = f"{settings.PUBLIC_APP_URL}/#/configuracion-inicial?token={token}"
+            print("*" * 62)
+            print("  FagoLab · token de instalación (un solo uso)")
+            print(f"  {token}")
+            print(f"  {setup_url}")
+            print("  Tras crear la primera administradora este token se destruye.")
+            print("*" * 62)
+        elif repo_bootstrap.is_locked():
+            print("[auth] instalación cerrada: el token de primer arranque ya no existe.")
+    except Exception as exc:
+        print(f"[auth] no se pudo preparar el token de instalación: {exc}")
 
 
 @app.on_event("startup")

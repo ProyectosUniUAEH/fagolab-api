@@ -104,6 +104,13 @@ class Settings:
         default="false",
     ).lower() in {"1", "true", "yes", "si"}
 
+    # Token de primer arranque (Jenkins / instalador Kaanbal). Vacío = se genera solo.
+    BOOTSTRAP_TOKEN: str = _first_env("BOOTSTRAP_TOKEN", "FAGOLAB_SETUP_TOKEN")
+    PUBLIC_APP_URL: str = _first_env(
+        "PUBLIC_APP_URL",
+        default="https://fagolab.softwarefactory.site",
+    ).rstrip("/")
+
     AGENT_ENCRYPTION_KEY: str = _first_env("AGENT_ENCRYPTION_KEY")
     AGENT_SHELL_ENABLED: bool = _first_env("AGENT_SHELL_ENABLED", default="false").lower() in {
         "1", "true", "yes", "si",
