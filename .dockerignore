@@ -1,0 +1,15 @@
+_private/
+.env
+.env.*
+!.env.example
+_backups/
+_media/
+_biblioteca/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+tests/
+AGENTS/

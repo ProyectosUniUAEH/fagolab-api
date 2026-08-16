@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets / local env (NEVER commit)
+_private/
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Datos locales del laboratorio: se respaldan desde la aplicación, no en Git.
+_backups/
+_media/
+_biblioteca/
+package-lock.json
