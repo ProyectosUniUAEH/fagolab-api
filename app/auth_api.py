@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta, timezone
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -169,10 +170,23 @@ def registration_status():
     }
 
 
+def _can_bootstrap(request: Request) -> bool:
+    """En local solo loopback. En Kaanbal el cliente visible es el ingress del cluster."""
+    host = (request.client.host if request.client else "") or ""
+    if host in {"127.0.0.1", "::1", "localhost"}:
+        return True
+    if settings.ENV.lower() in {"prod", "production", "staging"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(host.split("%", 1)[0])
+        return bool(ip.is_loopback or ip.is_private)
+    except ValueError:
+        return False
+
+
 @router.post("/bootstrap", status_code=201)
 def bootstrap(payload: BootstrapPayload, request: Request):
-    client_host = request.client.host if request.client else ""
-    if client_host not in {"127.0.0.1", "::1", "localhost"}:
+    if not _can_bootstrap(request):
         raise HTTPException(403, "La primera administradora solo puede crearse desde la laptop servidor.")
     if any(user["isSuperadmin"] for user in repo_auth.list_users()):
         raise HTTPException(409, "La configuración inicial ya fue completada.")
