@@ -10,7 +10,9 @@ from .api import router as api_router
 from .auth import AuthAclMiddleware, SecurityHeadersMiddleware
 from .auth_api import router as auth_router
 from .chat_api import router as chat_router
+from .analisis_api import router as analisis_router
 from .ia_api import router as ia_router
+from .seq_api import router as seq_router
 from .tareas_api import router as tareas_router
 from .config import settings
 from .db import close_pool, ping
@@ -33,6 +35,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(seq_router)
+app.include_router(analisis_router)
 app.include_router(chat_router)
 app.include_router(tareas_router)
 app.include_router(ia_router)

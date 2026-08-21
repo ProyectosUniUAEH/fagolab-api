@@ -8,13 +8,26 @@ import re
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, Response
 
 from . import repo, repo_mol, admin, repo_biblioteca
 from .config import settings
 
 router = APIRouter(prefix="/api")
+
+
+def _guard_data_ops(request: Request) -> None:
+    """En local, cualquiera autenticado con permiso. En Kaanbal, solo superadmin."""
+    if settings.ENV.lower() in {"local", "dev", "development"}:
+        return
+    user = getattr(request.state, "user", None) or {}
+    if user.get("isSuperadmin"):
+        return
+    raise HTTPException(
+        403,
+        "En el laboratorio solo la superadministradora puede sembrar, limpiar o restaurar datos.",
+    )
 
 
 # ---- Catálogos / proyecto -------------------------------------------------------------
@@ -505,16 +518,13 @@ def borrar_subcultivo(id_sub: str):
         raise HTTPException(409, str(e))
 
 
-# ---- Control de datos: pruebas y backups (solo entorno local) -------------------------
-def _guard_local() -> None:
-    """Las operaciones destructivas solo se permiten en entorno local."""
-    if settings.ENV != "local":
-        raise HTTPException(403, "Operación deshabilitada fuera del entorno local.")
-
-
+# ---- Control de datos: pruebas y backups ---------------------------------------------
 @router.get("/admin/estado")
 def admin_estado():
-    return admin.estado()
+    payload = admin.estado()
+    payload["entorno"] = settings.ENV
+    payload["opsHabilitadas"] = settings.ENV.lower() in {"local", "dev", "development"}
+    return payload
 
 
 @router.get("/admin/exportar")
@@ -530,14 +540,14 @@ def admin_exportar():
 
 
 @router.post("/admin/limpiar")
-def admin_limpiar():
-    _guard_local()
+def admin_limpiar(request: Request):
+    _guard_data_ops(request)
     return admin.limpiar()
 
 
 @router.post("/admin/sembrar")
-def admin_sembrar():
-    _guard_local()
+def admin_sembrar(request: Request):
+    _guard_data_ops(request)
     try:
         return admin.sembrar()
     except FileNotFoundError as e:
@@ -545,14 +555,14 @@ def admin_sembrar():
 
 
 @router.post("/admin/guardar-semilla")
-def admin_guardar_semilla():
-    _guard_local()
+def admin_guardar_semilla(request: Request):
+    _guard_data_ops(request)
     return admin.guardar_semilla()
 
 
 @router.post("/admin/importar")
-async def admin_importar(file: UploadFile = File(...)):
-    _guard_local()
+async def admin_importar(request: Request, file: UploadFile = File(...)):
+    _guard_data_ops(request)
     raw = await file.read()
     try:
         sql = raw.decode("utf-8")
@@ -562,7 +572,7 @@ async def admin_importar(file: UploadFile = File(...)):
         return admin.importar_sql(sql)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:  # error de SQL al restaurar
+    except Exception as e:
         raise HTTPException(400, f"Error al ejecutar el SQL: {e}")
 
 
@@ -573,14 +583,14 @@ def admin_respaldos():
 
 
 @router.post("/admin/respaldos")
-def admin_crear_respaldo():
-    _guard_local()
+def admin_crear_respaldo(request: Request):
+    _guard_data_ops(request)
     return admin.crear_respaldo()
 
 
 @router.post("/admin/respaldos/restaurar")
-def admin_restaurar_respaldo(payload: dict):
-    _guard_local()
+def admin_restaurar_respaldo(request: Request, payload: dict):
+    _guard_data_ops(request)
     try:
         return admin.restaurar_respaldo(payload.get("archivo") or "")
     except FileNotFoundError as e:

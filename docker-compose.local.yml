@@ -1,0 +1,31 @@
+# Postgres local para desarrollo de FagoLab.
+#
+#   docker compose -f docker-compose.local.yml up -d
+#   py -3 db/migrate.py
+#   py -3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --workers 1
+#
+# Las credenciales viven en _private/.env.dev (gitignored). Este archivo solo
+# levanta la base; nunca se usa en dev/prod (allí manda Kaanbal + ArgoCD).
+services:
+  fagolab-bd-postgres:
+    image: postgres:16
+    container_name: fagolab-bd-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fago_bd_postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-devadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fagolab_local}
+      # Colación estable para que los índices y ORDER BY se comporten igual que en el cluster.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - fagolab_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devadmin} -d ${POSTGRES_DB:-fago_bd_postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  fagolab_pgdata:
